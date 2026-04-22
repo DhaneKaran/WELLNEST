@@ -17,7 +17,7 @@ export const sseClients = new Map<number, Set<ReadableStreamDefaultController>>(
 
 export interface NotifyPayload {
   userId: number
-  type: 'APPOINTMENT' | 'ORDER' | 'APPROVAL' | 'PAYMENT' | 'REMINDER'
+  type: 'APPOINTMENT' | 'ORDER' | 'APPROVAL' | 'PAYMENT' | 'REMINDER' | 'REGISTRATION'
   title: string
   message: string
   metadata?: Record<string, unknown>

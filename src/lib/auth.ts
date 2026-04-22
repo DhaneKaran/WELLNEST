@@ -29,7 +29,6 @@ export const authOptions: NextAuthOptions = {
           const user = await Promise.race([
             prisma.user.findUnique({ 
               where: { email: credentials.email },
-              include: { roleAssignments: true }
             }),
             new Promise((_, reject) => 
               setTimeout(() => reject(new Error('Database connection timeout')), 5000)
