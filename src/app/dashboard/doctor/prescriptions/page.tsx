@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { FaSearch, FaPlus, FaTrash } from 'react-icons/fa'
@@ -23,7 +23,10 @@ interface Prescription {
   appointment: { id: number; date: string; hospital: { name: string } }
 }
 
-export default function DoctorPrescriptions() {
+// ─── Inner component that safely uses useSearchParams() ───────────────────────
+// useSearchParams() requires a Suspense boundary above it. Without one, Next.js
+// cannot statically prerender the page at build time and the deploy crashes.
+function PrescriptionsInner() {
   const { user, loading } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -32,6 +35,7 @@ export default function DoctorPrescriptions() {
   const [searchTerm, setSearchTerm] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
 
   // Form state
   const [appointmentId, setAppointmentId] = useState(searchParams.get('appointmentId') || '')
@@ -44,10 +48,15 @@ export default function DoctorPrescriptions() {
   ])
   const [submitting, setSubmitting] = useState(false)
 
-  // If coming from appointments page with pre-filled data, auto-open form
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  // Auto-open form if coming from appointments page with pre-filled data
   useEffect(() => {
     if (searchParams.get('appointmentId')) setShowForm(true)
-  }, [])
+  }, [searchParams])
 
   useEffect(() => {
     if (!loading && (!user || user.role !== 'DOCTOR')) router.push('/login')
@@ -85,7 +94,7 @@ export default function DoctorPrescriptions() {
 
   const handleSubmit = async () => {
     if (!appointmentId || !patientId || !diagnosis || medications.some(m => !m.name)) {
-      alert('Please fill all required fields.')
+      showToast('Please fill all required fields.', 'error')
       return
     }
     setSubmitting(true)
@@ -103,7 +112,7 @@ export default function DoctorPrescriptions() {
         })
       })
       if (res.ok) {
-        alert('Prescription created successfully!')
+        showToast('Prescription created successfully!', 'success')
         setShowForm(false)
         setDiagnosis('')
         setInstructions('')
@@ -114,10 +123,10 @@ export default function DoctorPrescriptions() {
         fetchPrescriptions()
       } else {
         const err = await res.json()
-        alert(err.error || 'Failed to create prescription.')
+        showToast(err.error || 'Failed to create prescription.', 'error')
       }
     } catch (err) {
-      alert('Error creating prescription.')
+      showToast('Error creating prescription.', 'error')
     } finally {
       setSubmitting(false)
     }
@@ -129,11 +138,26 @@ export default function DoctorPrescriptions() {
   )
 
   if (loading || !user) {
-    return <div className="min-h-screen flex justify-center items-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div></div>
+    return (
+      <div className="min-h-screen flex justify-center items-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    )
   }
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
+      {/* Inline toast — replaces alert() */}
+      {toast && (
+        <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-lg shadow-md text-sm font-medium transition-all ${
+          toast.type === 'success'
+            ? 'bg-green-100 text-green-800 border border-green-200'
+            : 'bg-red-100 text-red-800 border border-red-200'
+        }`}>
+          {toast.message}
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8 flex justify-between items-center">
           <div>
@@ -310,5 +334,19 @@ export default function DoctorPrescriptions() {
         )}
       </div>
     </div>
+  )
+}
+
+// ─── Public export: wraps inner component in Suspense ─────────────────────────
+// This is what fixes the Vercel prerender crash.
+export default function DoctorPrescriptions() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex justify-center items-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    }>
+      <PrescriptionsInner />
+    </Suspense>
   )
 }
