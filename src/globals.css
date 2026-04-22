@@ -1,0 +1,137 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&family=Poppins:wght@500;600&display=swap');
+
+:root {
+  --color-primary: #4A90E2;
+  --color-success: #5CB85C;
+  --color-warning: #F0AD4E;
+  --color-bg-main: #F8F8F8;
+  --color-bg-section: #EFEFEF;
+  --color-text-main: #333333;
+  --color-text-secondary: #666666;
+  --color-text-placeholder: #AAAAAA;
+  --color-alert-bg: #FFF3CD;
+  --color-alert-border: #FFECB3;
+  --color-alert-text: #856404;
+}
+
+html, body {
+  font-family: 'Open Sans', Arial, sans-serif;
+  background: var(--color-bg-main);
+  color: var(--color-text-main);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+h1, .h1 {
+  font-family: 'Poppins', Arial, sans-serif;
+  font-size: 2.25rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+h2, .h2 {
+  font-family: 'Poppins', Arial, sans-serif;
+  font-size: 1.75rem;
+  font-weight: 500;
+  color: var(--color-text-main);
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+input, select, textarea {
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 16px;
+  color: var(--color-text-main);
+  background: #fff;
+  font-family: 'Open Sans', Arial, sans-serif;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+  outline: none;
+}
+::placeholder {
+  color: var(--color-text-placeholder);
+}
+
+button, .btn {
+  background: var(--color-primary);
+  color: #fff;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease-in-out;
+  box-shadow: none;
+}
+button:hover, .btn:hover {
+  background: #3A7BBF;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+.btn-secondary {
+  background: transparent;
+  color: var(--color-primary);
+  border: 2px solid var(--color-primary);
+  border-radius: 8px;
+}
+.btn-secondary:hover {
+  background: #E6F0FA;
+}
+
+.alert {
+  background: var(--color-alert-bg);
+  color: var(--color-alert-text);
+  border: 1px solid var(--color-alert-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.text-secondary {
+  color: var(--color-text-secondary);
+}
+.text-placeholder {
+  color: var(--color-text-placeholder);
+}
+
+.small, .caption {
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+/* Spacing utility classes */
+.mt-16 { margin-top: 16px; }
+.mb-16 { margin-bottom: 16px; }
+.p-16 { padding: 16px; }
+.p-24 { padding: 24px; }
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .card { padding: 16px; }
+  h1, .h1 { font-size: 1.5rem; }
+  h2, .h2 { font-size: 1.25rem; }
+  button, .btn { padding: 10px 16px; font-size: 15px; }
+}
+
+/* Fix for Leaflet CSS in Next.js */
+.leaflet-container {
+  z-index: 0 !important;
+} 

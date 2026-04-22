@@ -1,0 +1,276 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                Int                @id @default(autoincrement())
+  name              String
+  email             String             @unique
+  password          String
+  role              Role               @default(PATIENT)
+  createdAt         DateTime           @default(now())
+  phone             String?
+  dob               DateTime?
+  address           String?
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+  updatedAt         DateTime           @default(now()) @updatedAt
+  appointments      Appointment[]
+  auditLogs         AuditLog[]
+  bills             Bill[]
+  doctorProfile     DoctorProfile?
+  memberships       Membership?
+  orders            Order[]
+  patientProfile    PatientProfile?
+  pharmacistProfile PharmacistProfile?
+  roleAssignments   RoleAssignment[]
+  doctor            Doctor?
+  prescriptions  Prescription[]
+  notifications Notification[]
+}
+
+model PatientProfile {
+  id             Int      @id @default(autoincrement())
+  userId         Int      @unique
+  dateOfBirth    DateTime
+  gender         String
+  bloodGroup     String?
+  medicalHistory String?
+  insurancePlan  String?
+  abhaCard       String?
+  documents      Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id])
+}
+
+model DoctorProfile {
+  id             Int      @id @default(autoincrement())
+  userId         Int      @unique
+  specialization String
+  qualifications String
+  experience     Int
+  licenseNumber  String
+  documents      Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id])
+  approvalStatus  String   @default("PENDING")  // PENDING | APPROVED | REJECTED
+  rejectionReason String?
+  degreeDetails   String   // e.g. "MBBS from AIIMS Delhi, 2010"
+  certificateUrl  String?  // uploaded doc URL (Cloudinary / S3)
+}
+
+model PharmacistProfile {
+  id             Int      @id @default(autoincrement())
+  userId         Int      @unique
+  pharmacyName   String
+  qualifications String
+  experience     Int
+  licenseNumber  String
+  documents      Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id])
+  approvalStatus    String   @default("PENDING")
+  rejectionReason   String?
+  certificateNumber String   // mandatory for pharmacists
+  certificateUrl    String?
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int                          // recipient user ID
+  type      String                       // APPOINTMENT | ORDER | APPROVAL | PAYMENT | REMINDER
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  metadata  Json?                        // extra data (appointmentId, orderId, etc.)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Doctor {
+  id             Int           @id @default(autoincrement())
+  userId         Int?          @unique          // ← ADD THIS LINE
+  name           String
+  specialization String
+  description    String
+  experience     Int
+  qualifications String
+  hospitalId     Int
+  availability   Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  appointments   Appointment[]
+  hospital       Hospital      @relation(fields: [hospitalId], references: [id])
+  user           User?         @relation(fields: [userId], references: [id])  // ← ADD THIS
+  prescriptions  Prescription[]  // ← ADD THIS
+}
+
+model Hospital {
+  id           Int           @id @default(autoincrement())
+  name         String
+  address      String
+  contact      String
+  coordinates  Float[]
+  services     String[]
+  rating       String?
+  appointments Appointment[]
+  doctors      Doctor[]
+}
+
+model Appointment {
+  id             Int      @id @default(autoincrement())
+  patientId      Int
+  hospitalId     Int
+  doctorId       Int
+  date           DateTime
+  time           String
+  status         String   @default("BOOKED")
+  medicalHistory String?
+  symptoms       String?
+  paymentStatus  String   @default("PENDING")
+  amount         Float    @default(20.0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  doctor         Doctor   @relation(fields: [doctorId], references: [id])
+  hospital       Hospital @relation(fields: [hospitalId], references: [id])
+  patient        User     @relation(fields: [patientId], references: [id])
+  bills          Bill[]
+  prescriptions  Prescription[]
+}
+
+model Prescription {
+  id            Int         @id @default(autoincrement())
+  appointmentId Int
+  patientId     Int
+  doctorId      Int
+  diagnosis     String
+  medications   Json        // [{name, dosage, frequency, duration}]
+  instructions  String?
+  status        String      @default("ACTIVE")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  doctor        Doctor      @relation(fields: [doctorId], references: [id])
+  patient       User        @relation(fields: [patientId], references: [id])
+}
+
+model Bill {
+  id            Int          @id @default(autoincrement())
+  appointmentId Int?
+  orderId       Int?
+  patientId     Int
+  amount        Float
+  type          String       @default("HOSPITAL")
+  description   String
+  status        String       @default("UNPAID")
+  paidAt        DateTime?
+  createdAt     DateTime     @default(now())
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+  order         Order?       @relation(fields: [orderId], references: [id])
+  patient       User         @relation(fields: [patientId], references: [id])
+  payments      Payment[]
+}
+
+model Medicine {
+  id           Int     @id @default(autoincrement())
+  name         String
+  use          String
+  dosageForm   String
+  manufacturer String  @default("Generic")
+  price        Float
+  stock        Int     @default(0)
+  category     String  @default("General")
+  prescription Boolean @default(false)
+  orders       Order[]
+}
+
+model Order {
+  id            Int      @id @default(autoincrement())
+  patientId     Int
+  medicineId    Int
+  quantity      Int
+  totalAmount   Float
+  paymentMethod String   @default("CASH_ON_DELIVERY")
+  paymentStatus String   @default("PENDING")
+  status        String   @default("PLACED")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  bills         Bill[]
+  medicine      Medicine @relation(fields: [medicineId], references: [id])
+  patient       User     @relation(fields: [patientId], references: [id])
+}
+
+model Payment {
+  id              Int       @id @default(autoincrement())
+  billId          Int
+  amount          Float
+  paymentMethod   String
+  gateway         String
+  status          String    @default("PENDING")
+  transactionId   String    @unique
+  customerDetails Json?
+  gatewayResponse Json?
+  paidAt          DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  bill            Bill      @relation(fields: [billId], references: [id])
+}
+
+model RoleAssignment {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  role      Role
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, role])
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  actorId    Int
+  action     String
+  entityType String
+  entityId   Int?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User     @relation(fields: [actorId], references: [id])
+}
+
+model Membership {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @unique
+  tier      String    @default("FREE")
+  status    String    @default("ACTIVE")
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  user      User      @relation(fields: [userId], references: [id])
+}
+
+model Campaign {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  isActive    Boolean   @default(false)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+enum Role {
+  PATIENT
+  DOCTOR
+  PHARMACIST
+  EMPLOYEE
+  ADMIN
+}
