@@ -62,7 +62,7 @@ model DoctorProfile {
   user           User     @relation(fields: [userId], references: [id])
   approvalStatus  String   @default("PENDING")  // PENDING | APPROVED | REJECTED
   rejectionReason String?
-  degreeDetails   String   // e.g. "MBBS from AIIMS Delhi, 2010"
+  degreeDetails   String?   // e.g. "MBBS from AIIMS Delhi, 2010"
   certificateUrl  String?  // uploaded doc URL (Cloudinary / S3)
 }
 
@@ -79,7 +79,7 @@ model PharmacistProfile {
   user           User     @relation(fields: [userId], references: [id])
   approvalStatus    String   @default("PENDING")
   rejectionReason   String?
-  certificateNumber String   // mandatory for pharmacists
+  certificateNumber String?   // mandatory for pharmacists
   certificateUrl    String?
 }
 
