@@ -21,6 +21,7 @@
     "@types/node": "^24.1.0",
     "@types/react": "^18.2.14",
     "@types/react-dom": "^18.2.7",
+    "@types/bcryptjs": "^2.4.2",
     "autoprefixer": "^10.4.21",
     "eslint": "8.56.0",
     "eslint-config-next": "14.2.3",
