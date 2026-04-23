@@ -17,8 +17,8 @@ export default function AdminApprovalsPage() {
     }
   }, [status])
 
-  const act = async (type: string, profileId: number, op: string) => {
-    await fetch('/api/admin/approvals', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, profileId, op }) })
+  const act = async (type: string, profileId: number,  action: string) => {
+    await fetch('/api/admin/approvals', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type, profileId,  action }) })
     const refreshed = await fetch('/api/admin/approvals').then(r => r.json())
     setPending(refreshed)
   }
@@ -36,7 +36,7 @@ export default function AdminApprovalsPage() {
                 <div className="text-sm text-gray-500">License: {d.licenseNumber}</div>
               </div>
               <div className="space-x-2">
-                <button onClick={() => act('DOCTOR', d.id, 'approve')} className="px-3 py-1 bg-green-600 text-white rounded text-sm">Approve</button>
+                <button onClick={() => act('DOCTOR', d.id, 'APPROVE')} className="px-3 py-1 bg-green-600 text-white rounded text-sm">Approve</button>
                 <button onClick={() => act('DOCTOR', d.id, 'reject')} className="px-3 py-1 bg-red-600 text-white rounded text-sm">Reject</button>
               </div>
             </li>

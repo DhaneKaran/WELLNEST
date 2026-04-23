@@ -3,7 +3,10 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/context/AuthContext'
 import { useRouter } from 'next/navigation'
-import { FaCalendarAlt, FaUserMd, FaClock, FaHospital, FaHistory, FaPlus, FaCreditCard, FaMoneyBillWave, FaFileMedical } from 'react-icons/fa'
+import {
+  FaCalendarAlt, FaUserMd, FaClock, FaHospital, FaHistory,
+  FaPlus, FaCreditCard, FaMoneyBillWave, FaSearch
+} from 'react-icons/fa'
 
 interface Doctor {
   id: number
@@ -22,6 +25,7 @@ interface Hospital {
   address: string
   contact?: string
   phone?: string
+  services?: string[]
 }
 
 interface Appointment {
@@ -44,80 +48,107 @@ interface Appointment {
 export default function AppointmentsPage() {
   const { user, loading } = useAuth()
   const router = useRouter()
+
   const [activeTab, setActiveTab] = useState<'book' | 'history'>('book')
+
+  // Hospital
+  const [hospitals, setHospitals] = useState<Hospital[]>([])
+  const [hospitalsLoading, setHospitalsLoading] = useState(true)
+  const [hospitalSearch, setHospitalSearch] = useState('')
   const [selectedHospital, setSelectedHospital] = useState<Hospital | null>(null)
+
+  // Doctor
   const [doctors, setDoctors] = useState<Doctor[]>([])
-  const [appointments, setAppointments] = useState<Appointment[]>([])
+  const [doctorsLoading, setDoctorsLoading] = useState(false)
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null)
+  const [selectedSpecialty, setSelectedSpecialty] = useState('')
+  const [specialties, setSpecialties] = useState<string[]>([])
+
+  // Booking
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedTime, setSelectedTime] = useState('')
   const [availableTimes, setAvailableTimes] = useState<string[]>([])
-  const [medicalHistory, setMedicalHistory] = useState('')
   const [symptoms, setSymptoms] = useState('')
-  const [age, setAge] = useState('')
-  const [contactNo, setContactNo] = useState('')
-  const [address, setAddress] = useState('')
-  const [expectedDate, setExpectedDate] = useState('')
+  const [additionalInfo, setAdditionalInfo] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+
+  // Payment
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<'CASH_ON_DELIVERY' | 'UPI'>('CASH_ON_DELIVERY')
-  const [selectedSpecialty, setSelectedSpecialty] = useState<string>('')
-  const [specialties, setSpecialties] = useState<string[]>([])
 
+  // History
+  const [appointments, setAppointments] = useState<Appointment[]>([])
+
+  // Fetch hospitals
   useEffect(() => {
-    if (user) {
-      // Get selected hospital from localStorage
-      const storedHospital = localStorage.getItem('selectedHospital')
-      if (storedHospital) {
-        try {
-          const hospital = JSON.parse(storedHospital)
-          console.log('Loaded hospital:', hospital) // Debug log
-          setSelectedHospital(hospital)
-          fetchDoctors(hospital.id)
-          localStorage.removeItem('selectedHospital') // Clear after use
-        } catch (error) {
-          console.error('Error parsing hospital data:', error)
-        }
-      }
-      fetchAppointments()
+    const load = async () => {
+      try {
+        setHospitalsLoading(true)
+        const res = await fetch('/api/hospitals')
+        if (res.ok) setHospitals(await res.json())
+      } catch (e) { console.error(e) }
+      finally { setHospitalsLoading(false) }
     }
-  }, [user])
-  
-  // Extract unique specialties from doctors
+    load()
+  }, [])
+
+  // Pre-select hospital stored from hospitals page
+  useEffect(() => {
+    if (!hospitalsLoading && hospitals.length > 0) {
+      const stored = localStorage.getItem('selectedHospital')
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored)
+          const match = hospitals.find(h => h.id === parsed.id) || parsed
+          setSelectedHospital(match)
+          localStorage.removeItem('selectedHospital')
+        } catch {}
+      }
+    }
+  }, [hospitalsLoading, hospitals])
+
+  // When hospital changes, fetch its doctors
+  useEffect(() => {
+    if (selectedHospital) {
+      fetchDoctors(selectedHospital.id)
+      setSelectedDoctor(null)
+      setSelectedSpecialty('')
+      setSelectedDate('')
+      setSelectedTime('')
+    } else {
+      setDoctors([])
+      setSpecialties([])
+    }
+  }, [selectedHospital])
+
+  // Derive specialties
   useEffect(() => {
     if (doctors.length > 0) {
-      const uniqueSpecialties = Array.from(new Set(doctors.map(doctor => doctor.specialization)))
-      setSpecialties(uniqueSpecialties)
+      setSpecialties(Array.from(new Set(doctors.map(d => d.specialization))))
+    } else {
+      setSpecialties([])
     }
   }, [doctors])
 
-  const fetchDoctors = async (hospitalName: string) => {
+  // Fetch appointments
+  useEffect(() => {
+    if (user) fetchAppointments()
+  }, [user])
+
+  const fetchDoctors = async (hospitalId: number) => {
     try {
-      console.log('Fetching doctors for hospital:', hospitalName) // Debug log
-      const response = await fetch(`/api/doctors?hospital=${encodeURIComponent(hospitalName)}`)
-      console.log('Doctors API response status:', response.status) // Debug log
-      if (response.ok) {
-        const data = await response.json()
-        console.log('Fetched doctors:', data) // Debug log
-        setDoctors(data)
-      } else {
-        console.error('Failed to fetch doctors:', response.status, response.statusText)
-      }
-    } catch (error) {
-      console.error('Error fetching doctors:', error)
-    }
+      setDoctorsLoading(true)
+      const res = await fetch(`/api/doctors?hospitalId=${hospitalId}`)
+      if (res.ok) setDoctors(await res.json())
+    } catch (e) { console.error(e) }
+    finally { setDoctorsLoading(false) }
   }
 
   const fetchAppointments = async () => {
     try {
-      const response = await fetch(`/api/appointments?patientId=${user?.id}`)
-      if (response.ok) {
-        const data = await response.json()
-        setAppointments(data)
-      }
-    } catch (error) {
-      console.error('Error fetching appointments:', error)
-    }
+      const res = await fetch(`/api/appointments?patientId=${user?.id}`)
+      if (res.ok) setAppointments(await res.json())
+    } catch (e) { console.error(e) }
   }
 
   const handleDoctorSelect = (doctor: Doctor) => {
@@ -130,11 +161,9 @@ export default function AppointmentsPage() {
   const handleDateSelect = (date: string) => {
     setSelectedDate(date)
     setSelectedTime('')
-    
-    if (selectedDoctor) {
-      const dayOfWeek = new Date(date).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()
-      const times = selectedDoctor.availability[dayOfWeek] || []
-      setAvailableTimes(times)
+    if (selectedDoctor?.availability) {
+      const day = new Date(date).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()
+      setAvailableTimes(selectedDoctor.availability[day] || [])
     }
   }
 
@@ -149,47 +178,35 @@ export default function AppointmentsPage() {
   const handleConfirmBooking = async () => {
     setIsLoading(true)
     try {
-      const response = await fetch('/api/appointments', {
+      const res = await fetch('/api/appointments', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           patientId: user?.id,
           hospitalId: selectedHospital?.id,
           doctorId: selectedDoctor?.id,
           date: selectedDate,
           time: selectedTime,
-          medicalHistory,
           symptoms,
-          age,
-          contactNo,
-          address,
-          expectedDate,
           paymentMethod,
-          amount: 20.0
+          amount: 20.0,
         }),
       })
-
-      if (response.ok) {
+      if (res.ok) {
         alert('Appointment booked successfully!')
         setShowPaymentModal(false)
         setSelectedDoctor(null)
         setSelectedDate('')
         setSelectedTime('')
-        setMedicalHistory('')
         setSymptoms('')
-        setAge('')
-        setContactNo('')
-        setAddress('')
-        setExpectedDate('')
+        setAdditionalInfo('')
         fetchAppointments()
         setActiveTab('history')
       } else {
         alert('Failed to book appointment. Please try again.')
       }
-    } catch (error) {
-      console.error('Error booking appointment:', error)
+    } catch (e) {
+      console.error(e)
       alert('Error booking appointment. Please try again.')
     } finally {
       setIsLoading(false)
@@ -198,328 +215,304 @@ export default function AppointmentsPage() {
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
-      case 'booked':
-        return 'bg-blue-100 text-blue-800'
-      case 'confirmed':
-        return 'bg-green-100 text-green-800'
-      case 'completed':
-        return 'bg-gray-100 text-gray-800'
-      case 'cancelled':
-        return 'bg-red-100 text-red-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
+      case 'booked': return 'bg-blue-100 text-blue-800'
+      case 'confirmed': return 'bg-green-100 text-green-800'
+      case 'completed': return 'bg-gray-100 text-gray-800'
+      case 'cancelled': return 'bg-red-100 text-red-800'
+      default: return 'bg-gray-100 text-gray-800'
     }
   }
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-IN', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    })
-  }
+  const formatDate = (ds: string) =>
+    new Date(ds).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })
 
   const getUpcomingDates = () => {
-    const dates = []
+    const dates: string[] = []
     const today = new Date()
     for (let i = 1; i <= 7; i++) {
-      const date = new Date(today)
-      date.setDate(today.getDate() + i)
-      dates.push(date.toISOString().split('T')[0])
+      const d = new Date(today)
+      d.setDate(today.getDate() + i)
+      dates.push(d.toISOString().split('T')[0])
     }
     return dates
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-2xl">Loading...</div>
-      </div>
-    )
-  }
+  const filteredHospitals = hospitals.filter(h =>
+    h.name.toLowerCase().includes(hospitalSearch.toLowerCase()) ||
+    h.address.toLowerCase().includes(hospitalSearch.toLowerCase())
+  )
 
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center p-8 bg-white rounded-xl shadow-lg max-w-md">
-          <h2 className="text-2xl font-bold text-blue-900 mb-4">Authentication Required</h2>
-          <p className="mb-6">You must be signed in to book appointments</p>
-          <div className="flex justify-center gap-4">
-            <button
-              onClick={() => router.push('/login')}
-              className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition"
-            >
-              Sign In
-            </button>
-            <button
-              onClick={() => router.push('/register')}
-              className="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 transition"
-            >
-              Create Account
-            </button>
-          </div>
+  const filteredDoctors = doctors.filter(
+    d => selectedSpecialty === '' || d.specialization === selectedSpecialty
+  )
+
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-2xl">Loading...</div>
+    </div>
+  )
+
+  if (!user) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center p-8 bg-white rounded-xl shadow-lg max-w-md">
+        <h2 className="text-2xl font-bold text-blue-900 mb-4">Authentication Required</h2>
+        <p className="mb-6">You must be signed in to book appointments</p>
+        <div className="flex justify-center gap-4">
+          <button onClick={() => router.push('/login')} className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition">Sign In</button>
+          <button onClick={() => router.push('/register')} className="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 transition">Create Account</button>
         </div>
       </div>
-    )
-  }
+    </div>
+  )
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
+
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-4">Appointments</h1>
           <p className="text-xl text-gray-600">Book appointments and view your medical history</p>
         </div>
 
-        {/* Tab Navigation */}
+        {/* Tabs */}
         <div className="flex justify-center mb-8">
           <div className="bg-white rounded-lg p-1 shadow-lg">
-            <button
-              onClick={() => setActiveTab('book')}
-              className={`px-6 py-3 rounded-md font-medium transition-colors flex items-center gap-2 ${
-                activeTab === 'book' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <FaPlus />
-              Book Appointment
+            <button onClick={() => setActiveTab('book')} className={`px-6 py-3 rounded-md font-medium transition-colors flex items-center gap-2 ${activeTab === 'book' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:text-gray-900'}`}>
+              <FaPlus /> Book Appointment
             </button>
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`px-6 py-3 rounded-md font-medium transition-colors flex items-center gap-2 ${
-                activeTab === 'history' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <FaHistory />
-              Appointment History
+            <button onClick={() => setActiveTab('history')} className={`px-6 py-3 rounded-md font-medium transition-colors flex items-center gap-2 ${activeTab === 'history' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:text-gray-900'}`}>
+              <FaHistory /> Appointment History
             </button>
           </div>
         </div>
 
         {activeTab === 'book' ? (
-          /* Booking Section */
-          <div className="bg-white rounded-xl shadow-lg p-8">
-            {/* Debug info */}
-            <div className="mb-4 p-4 bg-gray-100 rounded-lg text-sm">
-              <p><strong>Debug Info:</strong></p>
-              <p>Active Tab: {activeTab}</p>
-              <p>Selected Hospital: {selectedHospital ? selectedHospital.name : 'None'}</p>
-              <p>Doctors Count: {doctors.length}</p>
-              <p>Selected Specialty: {selectedSpecialty || 'All'}</p>
-              <p>Selected Doctor: {selectedDoctor ? selectedDoctor.name : 'None'}</p>
-            </div>
-            
-            {!selectedHospital ? (
-              <div className="text-center py-12">
-                <FaHospital className="text-gray-400 text-6xl mx-auto mb-4" />
-                <h2 className="text-2xl font-bold text-gray-900 mb-4">Select a Hospital</h2>
-                <p className="text-gray-600 mb-6">
-                  Please select a hospital from the hospitals page to book an appointment
-                </p>
-                <button
-                  onClick={() => router.push('/hospitals')}
-                  className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Go to Hospitals
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-8">
-                {/* Hospital Info */}
-                                  <div className="bg-blue-50 p-6 rounded-lg">
-                    <h2 className="text-xl font-bold text-blue-900 mb-2">{selectedHospital.name}</h2>
-                    <p className="text-gray-600">{selectedHospital.address}</p>
-                    <p className="text-gray-600">Contact: {selectedHospital.contact || selectedHospital.phone}</p>
+          <div className="space-y-6">
+
+            {/* STEP 1 – Hospital */}
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <span className="w-7 h-7 rounded-full bg-blue-600 text-white text-sm flex items-center justify-center font-bold">1</span>
+                Select Hospital
+              </h2>
+
+              {selectedHospital ? (
+                <div className="flex items-start justify-between bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div>
+                    <p className="font-semibold text-blue-900 text-lg">{selectedHospital.name}</p>
+                    <p className="text-gray-600 text-sm mt-0.5">{selectedHospital.address}</p>
+                    {(selectedHospital.contact || selectedHospital.phone) && (
+                      <p className="text-gray-500 text-sm">📞 {selectedHospital.contact || selectedHospital.phone}</p>
+                    )}
+                    {selectedHospital.services && selectedHospital.services.length > 0 && (
+                      <p className="text-xs text-blue-600 mt-1">{selectedHospital.services.slice(0, 3).join(' · ')}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => { setSelectedHospital(null); setDoctors([]); setSelectedDoctor(null) }}
+                    className="text-sm text-blue-600 hover:text-blue-800 underline ml-4 whitespace-nowrap"
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="relative mb-3">
+                    <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Search hospitals by name or area..."
+                      value={hospitalSearch}
+                      onChange={e => setHospitalSearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
                   </div>
 
-                {/* Specialty Selection */}
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Select Specialty</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mb-6">
-                    <button
-                      onClick={() => setSelectedSpecialty('')}
-                      className={`p-3 border-2 rounded-lg transition-colors ${
-                        selectedSpecialty === ''
-                          ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 hover:border-blue-300'
-                      }`}
-                    >
-                      All Specialties
-                    </button>
-                    {specialties.map((specialty) => (
-                      <button
-                        key={specialty}
-                        onClick={() => setSelectedSpecialty(specialty)}
-                        className={`p-3 border-2 rounded-lg transition-colors ${
-                          selectedSpecialty === specialty
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-gray-200 hover:border-blue-300'
-                        }`}
-                      >
-                        {specialty}
-                      </button>
-                    ))}
+                  {hospitalsLoading ? (
+                    <div className="text-center py-8 text-gray-500">Loading hospitals...</div>
+                  ) : filteredHospitals.length === 0 ? (
+                    <div className="text-center py-8 text-gray-400">No hospitals found</div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-80 overflow-y-auto pr-1">
+                      {filteredHospitals.map(h => (
+                        <button
+                          key={h.id}
+                          onClick={() => { setSelectedHospital(h); setHospitalSearch('') }}
+                          className="text-left p-4 border-2 border-gray-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                        >
+                          <p className="font-semibold text-gray-900">{h.name}</p>
+                          <p className="text-sm text-gray-500 mt-1">{h.address}</p>
+                          {h.services && h.services.length > 0 && (
+                            <p className="text-xs text-blue-500 mt-1">{h.services.slice(0, 2).join(', ')}{h.services.length > 2 ? '…' : ''}</p>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* STEP 2 – Doctor */}
+            {selectedHospital && (
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-full bg-blue-600 text-white text-sm flex items-center justify-center font-bold">2</span>
+                  Select Doctor
+                </h2>
+
+                {doctorsLoading ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-3"></div>
+                    Loading doctors...
                   </div>
-                
-                  {/* Doctor Selection */}
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Select Doctor</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {doctors
-                      .filter(doctor => selectedSpecialty === '' || doctor.specialization === selectedSpecialty)
-                      .map((doctor) => (
+                ) : doctors.length === 0 ? (
+                  <div className="text-center py-10 bg-yellow-50 rounded-lg border border-yellow-200">
+                    <FaUserMd className="text-yellow-400 text-4xl mx-auto mb-3" />
+                    <p className="text-gray-700 font-medium">No doctors currently listed for this hospital.</p>
+                    <p className="text-gray-500 text-sm mt-1">Doctors can link themselves to this hospital during registration or via their profile.</p>
+                  </div>
+                ) : (
+                  <>
+                    {specialties.length > 1 && (
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        <button
+                          onClick={() => setSelectedSpecialty('')}
+                          className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${selectedSpecialty === '' ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-600 hover:border-blue-400'}`}
+                        >
+                          All
+                        </button>
+                        {specialties.map(s => (
+                          <button key={s} onClick={() => setSelectedSpecialty(s)}
+                            className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${selectedSpecialty === s ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-600 hover:border-blue-400'}`}>
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {filteredDoctors.map(doctor => (
                         <div
                           key={doctor.id}
                           onClick={() => handleDoctorSelect(doctor)}
-                          className={`p-4 border-2 rounded-lg cursor-pointer transition-colors hover:shadow-md ${
-                            selectedDoctor?.id === doctor.id
-                              ? 'border-blue-500 bg-blue-50 shadow-lg'
-                              : 'border-gray-200 hover:border-blue-300'
-                          }`}
+                          className={`p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${selectedDoctor?.id === doctor.id ? 'border-blue-500 bg-blue-50 shadow-lg' : 'border-gray-200 hover:border-blue-300'}`}
                         >
                           <div className="flex items-center gap-3 mb-3">
-                            <FaUserMd className="text-blue-600 text-xl" />
+                            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
+                              <FaUserMd className="text-blue-600" />
+                            </div>
                             <div>
                               <h4 className="font-semibold text-gray-900">{doctor.name}</h4>
                               <p className="text-sm text-blue-600 font-medium">{doctor.specialization}</p>
                             </div>
                           </div>
-                          <p className="text-sm text-gray-600 mb-2">{doctor.description}</p>
-                          <div className="flex justify-between items-center text-xs text-gray-500">
+                          {doctor.description && (
+                            <p className="text-sm text-gray-600 mb-2 line-clamp-2">{doctor.description}</p>
+                          )}
+                          <div className="flex justify-between items-center text-xs text-gray-500 border-t pt-2 mt-2">
                             <span>{doctor.qualifications}</span>
-                            <span>{doctor.experience} years exp.</span>
+                            <span className="font-medium">{doctor.experience} yrs exp.</span>
                           </div>
                         </div>
                       ))}
-                  </div>
-                </div>
-
-                {selectedDoctor && (
-                  <>
-                    {/* Date Selection */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Select Date</h3>
-                      <div className="grid grid-cols-7 gap-2">
-                        {getUpcomingDates().map((date) => (
-                          <button
-                            key={date}
-                            onClick={() => handleDateSelect(date)}
-                            className={`p-3 border-2 rounded-lg text-sm transition-colors ${
-                              selectedDate === date
-                                ? 'border-blue-500 bg-blue-50 text-blue-700'
-                                : 'border-gray-200 hover:border-blue-300'
-                            }`}
-                          >
-                            <div className="font-semibold">
-                              {new Date(date).toLocaleDateString('en-IN', { day: 'numeric' })}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              {new Date(date).toLocaleDateString('en-IN', { month: 'short' })}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
                     </div>
-
-                    {/* Time Selection */}
-                    {selectedDate && availableTimes.length > 0 && (
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Select Time</h3>
-                        <div className="grid grid-cols-4 gap-3">
-                          {availableTimes.map((time) => (
-                            <button
-                              key={time}
-                              onClick={() => setSelectedTime(time)}
-                              className={`p-3 border-2 rounded-lg transition-colors ${
-                                selectedTime === time
-                                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                                  : 'border-gray-200 hover:border-blue-300'
-                              }`}
-                            >
-                              {time}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Patient Information */}
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Additional Information (Optional)</h3>
-                      
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Symptoms or Concerns
-                        </label>
-                        <textarea
-                          value={symptoms}
-                          onChange={(e) => setSymptoms(e.target.value)}
-                          placeholder="Describe your symptoms or concerns..."
-                          className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          rows={3}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Expected Date of Appointment *
-                        </label>
-                        <input
-                          type="date"
-                          value={expectedDate}
-                          onChange={(e) => setExpectedDate(e.target.value)}
-                          className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Current Symptoms *
-                        </label>
-                        <textarea
-                          value={symptoms}
-                          onChange={(e) => setSymptoms(e.target.value)}
-                          placeholder="Describe your current symptoms in detail..."
-                          className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          rows={3}
-                          required
-                        />
-                      </div>
-
-
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Additional Information (Optional)
-                        </label>
-                        <textarea
-                          placeholder="Any additional information about your condition, previous treatments, or special requirements..."
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                          rows={3}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Book Button */}
-                    <button
-                      onClick={handleBookAppointment}
-                      disabled={!selectedDate || !selectedTime || !selectedDoctor}
-                      className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed font-semibold text-lg"
-                    >
-                      Book Appointment (₹20)
-                    </button>
                   </>
                 )}
               </div>
             )}
+
+            {/* STEP 3 – Date & Time */}
+            {selectedDoctor && (
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-full bg-blue-600 text-white text-sm flex items-center justify-center font-bold">3</span>
+                  Choose Date &amp; Time
+                </h2>
+
+                <div className="mb-6">
+                  <p className="text-sm font-medium text-gray-700 mb-3">Pick a date (next 7 days)</p>
+                  <div className="grid grid-cols-7 gap-2">
+                    {getUpcomingDates().map(date => (
+                      <button key={date} onClick={() => handleDateSelect(date)}
+                        className={`p-2 border-2 rounded-lg text-sm transition-colors text-center ${selectedDate === date ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:border-blue-300'}`}>
+                        <div className="font-semibold">{new Date(date).toLocaleDateString('en-IN', { day: 'numeric' })}</div>
+                        <div className="text-xs text-gray-500">{new Date(date).toLocaleDateString('en-IN', { month: 'short' })}</div>
+                        <div className="text-xs text-gray-400">{new Date(date).toLocaleDateString('en-IN', { weekday: 'short' })}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {selectedDate && (
+                  availableTimes.length > 0 ? (
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 mb-3">Pick a time slot</p>
+                      <div className="grid grid-cols-4 gap-3">
+                        {availableTimes.map(time => (
+                          <button key={time} onClick={() => setSelectedTime(time)}
+                            className={`p-3 border-2 rounded-lg transition-colors ${selectedTime === time ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:border-blue-300'}`}>
+                            {time}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                      <p className="text-yellow-700">No slots available on this date. Please choose another date.</p>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+
+            {/* STEP 4 – Symptoms + Book */}
+            {selectedDoctor && selectedDate && selectedTime && (
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-full bg-blue-600 text-white text-sm flex items-center justify-center font-bold">4</span>
+                  Additional Information
+                </h2>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Symptoms / Reason for Visit</label>
+                    <textarea
+                      value={symptoms}
+                      onChange={e => setSymptoms(e.target.value)}
+                      placeholder="Describe your symptoms or reason for this appointment..."
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      rows={3}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Additional Info (Optional)</label>
+                    <textarea
+                      value={additionalInfo}
+                      onChange={e => setAdditionalInfo(e.target.value)}
+                      placeholder="Previous treatments, allergies, or special requirements..."
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      rows={2}
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleBookAppointment}
+                  className="w-full mt-6 bg-blue-600 text-white py-4 px-6 rounded-lg hover:bg-blue-700 transition-colors font-semibold text-lg"
+                >
+                  Proceed to Payment — ₹20
+                </button>
+              </div>
+            )}
+
           </div>
         ) : (
-          /* History Section */
+          /* History */
           <div className="bg-white rounded-xl shadow-lg overflow-hidden">
             <div className="p-6 border-b">
               <h2 className="text-2xl font-bold text-gray-900">Appointment History</h2>
             </div>
-            
             {appointments.length === 0 ? (
               <div className="text-center py-12">
                 <FaCalendarAlt className="text-gray-400 text-6xl mx-auto mb-4" />
@@ -528,35 +521,25 @@ export default function AppointmentsPage() {
               </div>
             ) : (
               <div className="divide-y">
-                {appointments.map((appointment) => (
-                  <div key={appointment.id} className="p-6 hover:bg-gray-50 transition-colors">
-                    <div className="flex items-center justify-between">
+                {appointments.map(appt => (
+                  <div key={appt.id} className="p-6 hover:bg-gray-50 transition-colors">
+                    <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
+                        <div className="flex items-center gap-3 mb-2 flex-wrap">
                           <FaUserMd className="text-blue-600" />
-                          <h3 className="font-semibold text-lg">{appointment.doctor.name}</h3>
-                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(appointment.status)}`}>
-                            {appointment.status}
-                          </span>
+                          <h3 className="font-semibold text-lg">{appt.doctor?.name}</h3>
+                          <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(appt.status)}`}>{appt.status}</span>
                         </div>
-                        <div className="flex items-center gap-4 text-sm text-gray-600">
-                          <span>{appointment.hospital.name}</span>
-                          <span>{appointment.doctor.specialization}</span>
-                          <span>{formatDate(appointment.date)} at {appointment.time}</span>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600">
+                          <span className="flex items-center gap-1"><FaHospital className="text-gray-400" />{appt.hospital?.name}</span>
+                          <span>{appt.doctor?.specialization}</span>
+                          <span className="flex items-center gap-1"><FaCalendarAlt className="text-gray-400" />{formatDate(appt.date)} at {appt.time}</span>
                         </div>
-                        {appointment.symptoms && (
-                          <p className="text-sm text-gray-600 mt-2">
-                            <strong>Symptoms:</strong> {appointment.symptoms}
-                          </p>
-                        )}
+                        {appt.symptoms && <p className="text-sm text-gray-600 mt-2"><strong>Symptoms:</strong> {appt.symptoms}</p>}
                       </div>
-                      <div className="text-right">
-                        <div className="text-lg font-bold text-green-600 mb-1">
-                          ₹{appointment.amount}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {appointment.paymentStatus}
-                        </div>
+                      <div className="text-right ml-4">
+                        <div className="text-lg font-bold text-green-600 mb-1">₹{appt.amount}</div>
+                        <div className="text-xs text-gray-500">{appt.paymentStatus}</div>
                       </div>
                     </div>
                   </div>
@@ -568,80 +551,44 @@ export default function AppointmentsPage() {
 
         {/* Payment Modal */}
         {showPaymentModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl p-6 max-w-md w-full">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">Confirm Appointment</h2>
-              
               <div className="space-y-4 mb-6">
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <h3 className="font-semibold mb-2">Appointment Details</h3>
-                  <div className="space-y-1 text-sm">
-                    <div><strong>Doctor:</strong> {selectedDoctor?.name}</div>
-                    <div><strong>Specialization:</strong> {selectedDoctor?.specialization}</div>
-                    <div><strong>Date:</strong> {formatDate(selectedDate)}</div>
-                    <div><strong>Time:</strong> {selectedTime}</div>
-                    <div><strong>Hospital:</strong> {selectedHospital?.name}</div>
-                  </div>
+                <div className="bg-gray-50 p-4 rounded-lg text-sm space-y-1">
+                  <div><strong>Hospital:</strong> {selectedHospital?.name}</div>
+                  <div><strong>Doctor:</strong> {selectedDoctor?.name}</div>
+                  <div><strong>Specialization:</strong> {selectedDoctor?.specialization}</div>
+                  <div><strong>Date:</strong> {formatDate(selectedDate)}</div>
+                  <div><strong>Time:</strong> {selectedTime}</div>
                 </div>
-
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Payment Method
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
                   <div className="space-y-2">
                     <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="paymentMethod"
-                        value="CASH_ON_DELIVERY"
-                        checked={paymentMethod === 'CASH_ON_DELIVERY'}
-                        onChange={(e) => setPaymentMethod(e.target.value as 'CASH_ON_DELIVERY' | 'UPI')}
-                        className="text-blue-600"
-                      />
-                      <FaMoneyBillWave className="text-green-600" />
-                      <span>Cash on Delivery</span>
+                      <input type="radio" name="pm" value="CASH_ON_DELIVERY" checked={paymentMethod === 'CASH_ON_DELIVERY'} onChange={() => setPaymentMethod('CASH_ON_DELIVERY')} />
+                      <FaMoneyBillWave className="text-green-600" /> Cash on Delivery
                     </label>
                     <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="paymentMethod"
-                        value="UPI"
-                        checked={paymentMethod === 'UPI'}
-                        onChange={(e) => setPaymentMethod(e.target.value as 'CASH_ON_DELIVERY' | 'UPI')}
-                        className="text-blue-600"
-                      />
-                      <FaCreditCard className="text-blue-600" />
-                      <span>UPI Payment</span>
+                      <input type="radio" name="pm" value="UPI" checked={paymentMethod === 'UPI'} onChange={() => setPaymentMethod('UPI')} />
+                      <FaCreditCard className="text-blue-600" /> UPI Payment
                     </label>
                   </div>
                 </div>
-
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="flex justify-between font-bold">
-                    <span>Appointment Fee:</span>
-                    <span>₹20.00</span>
-                  </div>
+                <div className="bg-blue-50 p-4 rounded-lg flex justify-between font-bold">
+                  <span>Appointment Fee:</span><span>₹20.00</span>
                 </div>
               </div>
-
               <div className="flex gap-3">
-                <button
-                  onClick={() => setShowPaymentModal(false)}
-                  className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirmBooking}
-                  disabled={isLoading}
-                  className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400"
-                >
+                <button onClick={() => setShowPaymentModal(false)} className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300">Cancel</button>
+                <button onClick={handleConfirmBooking} disabled={isLoading} className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400">
                   {isLoading ? 'Processing...' : 'Confirm Booking'}
                 </button>
               </div>
             </div>
           </div>
         )}
+
       </div>
     </div>
   )

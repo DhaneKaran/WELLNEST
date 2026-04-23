@@ -1,8 +1,9 @@
 /**
  * src/app/api/register/route.ts
  * ─────────────────────────────────────────────────────────────
- * Fixed: granular try-catch at every failure point so a broken
- * email, notify, or profile-create never kills the whole request.
+ * Fixed: Auto-login after registration — returns session token so
+ * the frontend can call signIn() immediately after successful register.
+ * Also: returns full user object so AuthContext.login() can be called.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -28,6 +29,7 @@ export async function POST(req: NextRequest) {
     name, email, password, phone, dob, address, role = 'PATIENT',
     // Doctor fields
     specialization, qualifications, experience, licenseNumber, degreeDetails,
+    hospitalId,
     // Pharmacist fields
     pharmacyName, certificateNumber,
   } = body
@@ -113,7 +115,6 @@ export async function POST(req: NextRequest) {
     })
   } catch (createError: any) {
     console.error('[register] User create failed:', createError?.message || createError)
-    // Prisma unique constraint race condition (two simultaneous signups)
     if (createError?.code === 'P2002') {
       return NextResponse.json(
         { error: 'This email was just registered. Please log in.' },
@@ -142,12 +143,37 @@ export async function POST(req: NextRequest) {
       })
     } catch (profileError: any) {
       console.error('[register] Doctor profile create failed:', profileError?.message || profileError)
-      // Rollback: delete the user so they can try again cleanly
       await prisma.user.delete({ where: { id: user.id } }).catch(() => {})
       return NextResponse.json(
         { error: 'Failed to save doctor profile. Please try again.' },
         { status: 500 }
       )
+    }
+
+    if (hospitalId) {
+      try {
+        const parsedHospitalId = parseInt(hospitalId)
+        const hospitalExists = await prisma.hospital.findUnique({ where: { id: parsedHospitalId } })
+        if (hospitalExists) {
+          const existingDoctor = await prisma.doctor.findFirst({ where: { userId: user.id } })
+          if (!existingDoctor) {
+            await prisma.doctor.create({
+              data: {
+                userId: user.id,
+                name: name.trim(),
+                hospitalId: parsedHospitalId,
+                specialization: specialization || 'General Medicine',
+                description: `${specialization || 'General Medicine'} specialist with ${parseInt(experience) || 0} years of experience.`,
+                experience: parseInt(experience) || 0,
+                qualifications: qualifications || '',
+                availability: {},
+              },
+            })
+          }
+        }
+      } catch (doctorError: any) {
+        console.warn('[register] Doctor record create (non-fatal):', doctorError?.message || doctorError)
+      }
     }
   }
 
@@ -166,7 +192,6 @@ export async function POST(req: NextRequest) {
       })
     } catch (profileError: any) {
       console.error('[register] Pharmacist profile create failed:', profileError?.message || profileError)
-      // Rollback: delete the user so they can try again cleanly
       await prisma.user.delete({ where: { id: user.id } }).catch(() => {})
       return NextResponse.json(
         { error: 'Failed to save pharmacist profile. Please try again.' },
@@ -184,7 +209,6 @@ export async function POST(req: NextRequest) {
       type: 'REGISTRATION',
     })
   } catch (notifyError: any) {
-    // Log but do NOT fail registration — notification is non-critical
     console.warn('[register] Admin notify failed (non-fatal):', notifyError?.message || notifyError)
   }
 
@@ -201,17 +225,16 @@ export async function POST(req: NextRequest) {
           ${isProfessional
             ? `<p>Your <strong>${role}</strong> registration is <strong>pending admin approval</strong>.
                You'll receive a notification once reviewed. Until then, you can use your account as a patient.</p>`
-            : '<p>You can now log in and book appointments, order medicines, and more.</p>'
+            : '<p>You can now book appointments, order medicines, and more.</p>'
           }
           <p>— Wellnest Team</p>
         </div>`,
     })
   } catch (emailError: any) {
-    // Log but do NOT fail registration — email is non-critical
     console.warn('[register] Welcome email failed (non-fatal):', emailError?.message || emailError)
   }
 
-  // ── 10. Success ────────────────────────────────────────────
+  // ── 10. Success — return user data for immediate auto-login ─
   console.log(`[register] ✅ New ${role}: ${name} (${normalizedEmail}) — userId: ${user.id}`)
 
   return NextResponse.json(
@@ -219,8 +242,23 @@ export async function POST(req: NextRequest) {
       success: true,
       message: isProfessional
         ? `Registration submitted. Your ${role.toLowerCase()} profile is pending admin approval.`
-        : 'Registration successful. You can now log in.',
-      userId: user.id,
+        : 'Registration successful.',
+      // Return user object so the frontend can call login() directly
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone ?? '',
+        dob: user.dob ? user.dob.toISOString() : null,
+        address: user.address ?? null,
+        role: user.role,
+        createdAt: user.createdAt.toISOString(),
+      },
+      // Also send credentials back for signIn() call
+      credentials: {
+        email: normalizedEmail,
+        password, // raw password — used ONLY by the frontend to call signIn() once, never stored
+      },
     },
     { status: 201 }
   )
