@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
   try {
     hashed = await bcrypt.hash(password, 10)
   } catch (hashError: any) {
-    console.error('[register] bcrypt error:', hashError?.message || hashError)
+    console.error('[register] bcryptjs error:', hashError?.message || hashError)
     return NextResponse.json(
       { error: 'Password processing failed. Please try again.' },
       { status: 500 }

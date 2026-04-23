@@ -1,10 +1,10 @@
 const { PrismaClient } = require('@prisma/client');
-const bcrypt = require('bcrypt');
+const bcryptjs = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const password = await bcrypt.hash('password123', 10);
+  const password = await bcryptjs.hash('password123', 10);
 
   await prisma.user.createMany({
     data: [
