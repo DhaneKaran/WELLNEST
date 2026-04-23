@@ -19,7 +19,12 @@ export default function Navbar() {
   const { user, logout, loading } = useAuth()
   const { data: session } = useSession()
   const sessionRole = (session?.user as any)?.role
-  const sessionRoles = (session?.user as any)?.roles || (sessionRole ? [sessionRole] : [])
+  const rawSessionRoles = (session?.user as any)?.roles
+  const sessionRoles: string[] = Array.isArray(rawSessionRoles)
+    ? rawSessionRoles
+    : rawSessionRoles
+      ? Object.values(rawSessionRoles)
+      : sessionRole ? [sessionRole] : []
   const effectiveRole = sessionRole || user?.role
   const isAuthenticated = !!session
   const isAdmin = sessionRoles.includes('ADMIN') || effectiveRole === 'ADMIN'

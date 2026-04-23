@@ -39,10 +39,7 @@ export default function ProfilePage() {
           <h2 className="text-2xl font-bold text-blue-900 mb-4">No Profile Found</h2>
           <p className="mb-6">Please sign in to view your profile</p>
           <div className="flex justify-center gap-4">
-            <a
-              href="/login"
-              className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition"
-            >
+            <a href="/login" className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition">
               Sign In
             </a>
           </div>
@@ -51,7 +48,6 @@ export default function ProfilePage() {
     )
   }
 
-  // Format date of birth properly
   const formatDateOfBirth = (dob: string | null) => {
     if (!dob) return 'Not provided'
     try {
@@ -63,7 +59,6 @@ export default function ProfilePage() {
     }
   }
 
-  // Format member since date
   const formatMemberSince = (createdAt: string) => {
     try {
       const date = new Date(createdAt)
@@ -74,11 +69,15 @@ export default function ProfilePage() {
     }
   }
 
-  // Merge session details with local user to reflect admin info accurately
   const displayName = (session?.user as any)?.name || user?.name || 'User'
   const displayEmail = (session?.user as any)?.email || user?.email || ''
   const displayRole = (session?.user as any)?.role || user?.role
-  const displayRoles: string[] = (session?.user as any)?.roles || [displayRole]
+  const rawDisplayRoles = (session?.user as any)?.roles
+  const displayRoles: string[] = Array.isArray(rawDisplayRoles)
+    ? rawDisplayRoles
+    : rawDisplayRoles
+      ? Object.values(rawDisplayRoles)
+      : [displayRole].filter(Boolean)
   const displayId = (session?.user as any)?.id || user?.id
 
   return (
@@ -103,10 +102,7 @@ export default function ProfilePage() {
                 </div>
               </div>
               <div className="flex gap-3">
-                <a
-                  href="/profile/edit"
-                  className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition font-semibold"
-                >
+                <a href="/profile/edit" className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition font-semibold">
                   Edit Profile
                 </a>
                 <button
@@ -123,10 +119,7 @@ export default function ProfilePage() {
           <div className="p-6">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-gray-800">Personal Information</h2>
-              <a
-                href="/profile/edit"
-                className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition text-sm font-medium"
-              >
+              <a href="/profile/edit" className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition text-sm font-medium">
                 Edit Profile
               </a>
             </div>
@@ -167,11 +160,11 @@ export default function ProfilePage() {
                 <p className="text-lg font-medium">{user?.createdAt ? formatMemberSince(user.createdAt) : 'Unknown'}</p>
               </div>
 
-              {/* Signed-in account details from session */}
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="text-gray-500 text-sm font-medium mb-1">Account ID</h3>
                 <p className="text-lg font-medium">{displayId}</p>
               </div>
+
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h3 className="text-gray-500 text-sm font-medium mb-1">Roles</h3>
                 <p className="text-lg font-medium">{displayRoles.join(', ')}</p>
@@ -182,4 +175,4 @@ export default function ProfilePage() {
       </div>
     </div>
   )
-} 
+}

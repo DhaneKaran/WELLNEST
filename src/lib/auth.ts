@@ -69,7 +69,7 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }: any) {
       if (user) {
         token.role = user.role;
-        token.roles = user.roles || [user.role];
+        token.roles = Array.isArray(user.roles) ? user.roles : [user.role].filter(Boolean);
         token.id = user.id;
       }
       return token;
@@ -78,7 +78,12 @@ export const authOptions: NextAuthOptions = {
       if (token) {
         session.user.id = token.id;
         session.user.role = token.role;
-        (session.user as any).roles = token.roles || [token.role];
+        const rawRoles = token.roles;
+        (session.user as any).roles = Array.isArray(rawRoles)
+          ? rawRoles
+          : rawRoles
+            ? Object.values(rawRoles)
+            : [token.role].filter(Boolean);
       }
       return session;
     },
@@ -87,4 +92,4 @@ export const authOptions: NextAuthOptions = {
     signIn: "/login",
   },
   secret: process.env.NEXTAUTH_SECRET,
-}; 
+};
