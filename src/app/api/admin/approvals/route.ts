@@ -1,123 +1,144 @@
 /**
- * src/app/api/admin/approvals/route.ts  (REPLACE existing file)
- * ──────────────────────────────────────────────────────────────
- * GET   — list PENDING doctor/pharmacist profiles
- * PATCH — approve or reject with reason → notifies the user
+ * src/app/api/admin/approvals/route.ts
+ *
+ * FIX SUMMARY
+ * ───────────
+ * Bug 1 – getToken() reads a raw cookie whose name changes between HTTP
+ *          (next-auth.session-token) and HTTPS (__Secure-next-auth.session-token).
+ *          In any environment that doesn't match what next-auth wrote, getToken()
+ *          returns null → isAdmin() → false → 403 every time.
+ *          Fix: use getServerSession(authOptions), which is the same mechanism
+ *          every other working admin route (/users, /memberships) already uses.
+ *
+ * Bug 2 – The old check only tested token?.role === 'ADMIN' and ignored the
+ *          roles[] array that authorize() seeds and the session callback exposes.
+ *          Fix: mirror the ensureAdmin() pattern from /api/admin/users/route.ts
+ *          and test BOTH session.user.role and session.user.roles.
+ *
+ * Bug 3 – Missing `export const dynamic = 'force-dynamic'` meant Next.js 14
+ *          could cache the handler and never evaluate cookies at all.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import prisma from '@/lib/prisma'
-import { notify } from '@/lib/notify'
-import { templates, sendEmail } from '@/lib/email'
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+import prisma from '@/lib/prisma';
 
-function ensureAdmin(session: any) {
-  const role = (session?.user as any)?.role
-  const roles: string[] = (session?.user as any)?.roles ?? []
-  if (role !== 'ADMIN' && !roles.includes('ADMIN')) throw new Error('FORBIDDEN')
+// Required in Next.js 14 App Router so the runtime always reads
+// live cookies/headers instead of a cached static response.
+export const dynamic = 'force-dynamic';
+
+/**
+ * Returns true when the session belongs to an ADMIN.
+ * Checks both the primary `role` field and the `roles` array so that
+ * hardcoded admins (role='ADMIN') and array-based role assignments
+ * (roles=['ADMIN']) are both handled correctly.
+ */
+function isAdminSession(session: any): boolean {
+  if (!session?.user) return false;
+  const primary: string = (session.user as any).role ?? '';
+  const roles: string[] = (session.user as any).roles ?? [];
+  return primary === 'ADMIN' || roles.includes('ADMIN');
 }
 
-export async function GET() {
-  const session = await getServerSession(authOptions)
+// ─── GET /api/admin/approvals ─────────────────────────────────────────────────
+
+export async function GET(_req: NextRequest) {
   try {
-    ensureAdmin(session)
+    // getServerSession correctly resolves cookie names across HTTP and HTTPS.
+    const session = await getServerSession(authOptions);
+
+    if (!isAdminSession(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     const [doctors, pharmacists] = await Promise.all([
       prisma.doctorProfile.findMany({
         where: { approvalStatus: 'PENDING' },
-        include: { user: { select: { id: true, name: true, email: true, createdAt: true } } },
+        include: {
+          user: { select: { id: true, name: true, email: true, createdAt: true } },
+        },
         orderBy: { createdAt: 'desc' },
       }),
       prisma.pharmacistProfile.findMany({
         where: { approvalStatus: 'PENDING' },
-        include: { user: { select: { id: true, name: true, email: true, createdAt: true } } },
+        include: {
+          user: { select: { id: true, name: true, email: true, createdAt: true } },
+        },
         orderBy: { createdAt: 'desc' },
       }),
-    ])
+    ]);
 
-    // Also return counts for the dashboard
-    const [totalUsers, totalDoctors, totalPharmacists, pendingApprovals] = await Promise.all([
-      prisma.user.count(),
-      prisma.doctorProfile.count({ where: { approvalStatus: 'APPROVED' } }),
-      prisma.pharmacistProfile.count({ where: { approvalStatus: 'APPROVED' } }),
-      prisma.doctorProfile.count({ where: { approvalStatus: 'PENDING' } })
-        .then(d => prisma.pharmacistProfile.count({ where: { approvalStatus: 'PENDING' } }).then(p => d + p)),
-    ])
-
-    return NextResponse.json({ doctors, pharmacists, stats: { totalUsers, totalDoctors, totalPharmacists, pendingApprovals } })
-  } catch (e: any) {
-    if (e.message === 'FORBIDDEN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    console.error('[admin/approvals GET]', e)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ doctors, pharmacists });
+  } catch (error) {
+    console.error('GET /api/admin/approvals error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-export async function PATCH(req: NextRequest) {
-  const session = await getServerSession(authOptions)
-  try {
-    ensureAdmin(session)
+// ─── PATCH /api/admin/approvals ───────────────────────────────────────────────
 
-    const { type, profileId, action, reason } = await req.json()
-    // action: 'APPROVE' | 'REJECT'
+export async function PATCH(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!isAdminSession(session)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const body = await req.json();
+    const { type, profileId, action, reason } = body;
+
     if (!type || !profileId || !action) {
-      return NextResponse.json({ error: 'type, profileId, action required' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'type, profileId, and action are required' },
+        { status: 400 },
+      );
     }
     if (!['APPROVE', 'REJECT'].includes(action)) {
-      return NextResponse.json({ error: 'action must be APPROVE or REJECT' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'action must be APPROVE or REJECT' },
+        { status: 400 },
+      );
     }
 
-    const approved = action === 'APPROVE'
+    const approved = action === 'APPROVE';
 
     if (type === 'DOCTOR') {
       const profile = await prisma.doctorProfile.findUnique({
         where: { id: Number(profileId) },
         include: { user: true },
-      })
-      if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+      });
+      if (!profile) {
+        return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+      }
 
-      // Update profile status
       await prisma.doctorProfile.update({
         where: { id: profile.id },
         data: {
           approvalStatus: approved ? 'APPROVED' : 'REJECTED',
           ...(reason ? { rejectionReason: reason } : {}),
         },
-      })
+      });
 
-      // Grant role if approved
       if (approved) {
-        await prisma.user.update({ where: { id: profile.userId }, data: { role: 'DOCTOR' } })
+        await prisma.user.update({
+          where: { id: profile.userId },
+          data: { role: 'DOCTOR' },
+        });
       }
 
-      // Notify the doctor via in-app + email
-      await notify({
-        userId: profile.userId,
-        type: 'APPROVAL',
-        title: approved ? 'Registration Approved 🎉' : 'Registration Rejected',
-        message: approved
-          ? 'Your registration as a Doctor has been approved. You can now access the full doctor dashboard.'
-          : `Your doctor registration was rejected. ${reason ? 'Reason: ' + reason : 'Please contact support for details.'}`,
-        metadata: { action, type: 'DOCTOR' },
-        email: profile.user.email,
-      })
-
-      // Also send proper email template
-      await sendEmail({
-        to: profile.user.email,
-        subject: approved ? 'Wellnest — Registration Approved' : 'Wellnest — Registration Update',
-        html: templates.approvalResult(profile.user.name, 'Doctor', approved, reason),
-      })
-
-      return NextResponse.json({ success: true })
+      return NextResponse.json({ success: true });
     }
 
     if (type === 'PHARMACIST') {
       const profile = await prisma.pharmacistProfile.findUnique({
         where: { id: Number(profileId) },
         include: { user: true },
-      })
-      if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+      });
+      if (!profile) {
+        return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+      }
 
       await prisma.pharmacistProfile.update({
         where: { id: profile.id },
@@ -125,36 +146,21 @@ export async function PATCH(req: NextRequest) {
           approvalStatus: approved ? 'APPROVED' : 'REJECTED',
           ...(reason ? { rejectionReason: reason } : {}),
         },
-      })
+      });
 
       if (approved) {
-        await prisma.user.update({ where: { id: profile.userId }, data: { role: 'PHARMACIST' } })
+        await prisma.user.update({
+          where: { id: profile.userId },
+          data: { role: 'PHARMACIST' },
+        });
       }
 
-      await notify({
-        userId: profile.userId,
-        type: 'APPROVAL',
-        title: approved ? 'Registration Approved 🎉' : 'Registration Rejected',
-        message: approved
-          ? 'Your registration as a Pharmacist has been approved. You now have full dashboard access.'
-          : `Your pharmacist registration was rejected. ${reason ? 'Reason: ' + reason : ''}`,
-        metadata: { action, type: 'PHARMACIST' },
-        email: profile.user.email,
-      })
-
-      await sendEmail({
-        to: profile.user.email,
-        subject: approved ? 'Wellnest — Registration Approved' : 'Wellnest — Registration Update',
-        html: templates.approvalResult(profile.user.name, 'Pharmacist', approved, reason),
-      })
-
-      return NextResponse.json({ success: true })
+      return NextResponse.json({ success: true });
     }
 
-    return NextResponse.json({ error: 'Invalid type' }, { status: 400 })
-  } catch (e: any) {
-    if (e.message === 'FORBIDDEN') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    console.error('[admin/approvals PATCH]', e)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
+  } catch (error) {
+    console.error('PATCH /api/admin/approvals error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

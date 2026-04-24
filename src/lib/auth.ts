@@ -167,11 +167,32 @@ export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   callbacks: {
     async jwt({ token, user }: any) {
+      // On initial sign-in, seed the token from the user object returned by authorize()
       if (user) {
         token.role = user.role;
         token.roles = Array.isArray(user.roles) ? user.roles : [user.role].filter(Boolean);
         token.id = user.id;
       }
+
+      // On every subsequent request, re-fetch the role from the DB so that
+      // admin approvals (PATIENT → DOCTOR / PHARMACIST) are reflected immediately
+      // without requiring the user to log out and back in.
+      // Skip for the hardcoded ADMIN token (id === 'ADMIN').
+      if (token.id && token.id !== 'ADMIN') {
+        try {
+          const freshUser = await prisma.user.findUnique({
+            where: { id: Number(token.id) },
+            select: { role: true },
+          });
+          if (freshUser && freshUser.role !== token.role) {
+            token.role = freshUser.role;
+            token.roles = [freshUser.role];
+          }
+        } catch {
+          // Non-fatal — keep whatever role is already in the token
+        }
+      }
+
       return token;
     },
     async session({ session, token }: any) {

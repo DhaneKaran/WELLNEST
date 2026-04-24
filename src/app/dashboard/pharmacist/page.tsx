@@ -1,18 +1,22 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useSession } from 'next-auth/react'
-import { redirect } from 'next/navigation'
+import { useAuth } from '@/context/AuthContext'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { FaClipboardList, FaPills, FaChartLine, FaShoppingCart } from 'react-icons/fa'
 
 export default function PharmacistDashboard() {
-  const { data: session, status } = useSession()
+  const { user, loading } = useAuth()
+  const router = useRouter()
   const [stats, setStats] = useState({ pendingOrders: 0, lowStock: 0, ordersToProcess: 0, totalRevenue: 0 })
   const [isLoading, setIsLoading] = useState(true)
 
-  if (status === 'unauthenticated') redirect('/login')
-  if (session?.user && (session.user as any).role !== 'PHARMACIST') redirect('/dashboard/patient')
+  useEffect(() => {
+    if (!loading && (!user || user.role !== 'PHARMACIST')) {
+      router.push('/login')
+    }
+  }, [user, loading, router])
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -38,8 +42,8 @@ export default function PharmacistDashboard() {
         setIsLoading(false)
       }
     }
-    if (session) fetchStats()
-  }, [session])
+    if (user && user.role === 'PHARMACIST') fetchStats()
+  }, [user])
 
   return (
     <div className="container mx-auto p-6">
